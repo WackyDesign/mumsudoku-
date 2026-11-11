@@ -173,6 +173,15 @@ button:active{transform:scale(.96)}
 .rtxt{display:flex;justify-content:space-between;align-items:baseline;gap:4px 10px;flex-wrap:wrap;min-width:0}
 .rank .bar{grid-column:1/-1;height:5px}
 .rtxt .pts{white-space:normal;text-align:right}
+/* Feiertagsrahmen */
+#hfx{position:fixed;inset:0;z-index:0;pointer-events:none;width:100%;height:100%}
+.board-wrap[data-hol] .board{border-color:var(--h1);box-shadow:0 0 0 4px var(--h2),0 0 0 6px var(--h1),0 8px 30px rgb(0 0 0/.3)}
+.hdeco{position:absolute;z-index:3;font-size:clamp(22px,7vw,32px);line-height:1;pointer-events:none;filter:drop-shadow(0 2px 3px rgb(0 0 0/.35))}
+.hdeco.tl{top:-18px;left:-12px;transform:rotate(-12deg)}.hdeco.tr{top:-18px;right:-12px;transform:rotate(12deg)}
+.hdeco.bl{bottom:-18px;left:-12px;transform:rotate(8deg)}.hdeco.br{bottom:-18px;right:-12px;transform:rotate(-8deg)}
+.hlabel{position:absolute;z-index:3;top:0;left:50%;transform:translate(-50%,-62%);padding:4px 14px;border-radius:99px;background:var(--h1);color:#fff;
+  font:700 .8rem var(--display);white-space:nowrap;box-shadow:0 0 0 2px var(--h2),0 4px 12px rgb(0 0 0/.3);pointer-events:none}
+.holsel{font:500 .85rem var(--display);padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--paper);color:var(--ink)}
 .cheer{position:fixed;z-index:65;left:50%;top:calc(env(safe-area-inset-top,0px) + 7%);transform:translate(-50%,0) scale(.6);opacity:0;pointer-events:none;
   padding:14px 24px;border-radius:20px;background:var(--accent);color:#fff;font:700 clamp(1.3rem,6vw,1.8rem) var(--display);letter-spacing:-.01em;
   width:max-content;max-width:calc(100vw - 32px);text-align:center;text-wrap:balance;box-shadow:0 12px 36px rgb(0 0 0/.35);transition:opacity .35s ease,transform .45s cubic-bezier(.2,1.6,.4,1)}
@@ -246,6 +255,7 @@ body:not(.has-bg) #focusBtn{display:none}
 </head>
 <body>
 <div class="bg" id="bg" aria-hidden="true"></div>
+<canvas id="hfx" aria-hidden="true"></canvas>
 <div class="app">
   <div class="panel">
   <header>
@@ -665,6 +675,61 @@ document.addEventListener('visibilitychange',()=>{if(!AC)return;document.hidden?
 document.addEventListener('pointerdown',function first(){document.removeEventListener('pointerdown',first,true);
   if(P.track&&!cur&&unlockedTracks().includes(P.track))playTrack(P.track)},true);
 
+// ---------- Feiertagsrahmen ----------
+const HOL={
+  weihnachten:{n:'Weihnachten',label:'Frohe Weihnachten',c1:'#c8102e',c2:'#d4a017',deco:['🎄','⭐','🎁','❄️'],fx:'snow'},
+  silvester:{n:'Silvester',label:'Frohes neues Jahr',c1:'#d4a017',c2:'#2b2d6e',deco:['🎆','🥂','✨','🎇'],fx:'spark'},
+  valentin:{n:'Valentinstag',label:'Alles Liebe',c1:'#e0457b',c2:'#ffc2d4',deco:['❤️','🌹','💕','❤️'],fx:'hearts'},
+  karneval:{n:'Karneval',label:'Helau und Alaaf',c1:'#e63946',c2:'#2a9d8f',deco:['🎉','🎭','🎊','🥳'],fx:'confetti'},
+  ostern:{n:'Ostern',label:'Frohe Ostern',c1:'#6a9f4b',c2:'#f4d35e',deco:['🐣','🥚','🌷','🐰'],fx:'petals'},
+  muttertag:{n:'Muttertag',label:'Alles Liebe zum Muttertag',c1:'#d9668a',c2:'#ffd6e0',deco:['💐','🌷','❤️','🌸'],fx:'petals'},
+  halloween:{n:'Halloween',label:'Happy Halloween',c1:'#ff7518',c2:'#4b2a6b',deco:['🎃','🦇','👻','🕸️'],fx:'leaves'}};
+function easter(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),
+  h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;
+  return new Date(y,mo-1,da)}
+function holidayFor(dt){const y=dt.getFullYear(),M=dt.getMonth()+1,D=dt.getDate(),day=new Date(y,M-1,D);
+  const diff=(a)=>Math.round((day-a)/864e5);
+  if((M===12&&D>=30)||(M===1&&D===1))return'silvester';
+  if(M===12&&D<=26)return'weihnachten';
+  if(M===2&&D>=12&&D<=14)return'valentin';
+  if(M===10&&D>=29)return'halloween';
+  if(M===11&&D===11)return'karneval';
+  const e=diff(easter(y));if(e>=-52&&e<=-47)return'karneval';if(e>=-3&&e<=1)return'ostern';
+  if(M===5){const first=new Date(y,4,1),sun=1+((7-first.getDay())%7)+7;if(D===sun||D===sun-1)return'muttertag'}
+  return null}
+function activeHol(){const v=P.hol||'auto';if(v==='off')return null;if(v!=='auto')return HOL[v]?v:null;return holidayFor(new Date())}
+let hfxRaf=null;
+function applyHol(){const id=activeHol(),w=document.querySelector('.board-wrap'),h=HOL[id];
+  w.querySelectorAll('.hdeco,.hlabel').forEach(x=>x.remove());
+  if(!h){w.removeAttribute('data-hol');w.style.removeProperty('--h1');w.style.removeProperty('--h2');stopHfx();return}
+  w.setAttribute('data-hol',id);w.style.setProperty('--h1',h.c1);w.style.setProperty('--h2',h.c2);
+  ['tl','tr','bl','br'].forEach((p,k)=>{const s=document.createElement('span');s.className='hdeco '+p;s.textContent=h.deco[k];s.setAttribute('aria-hidden','true');w.appendChild(s)});
+  const l=document.createElement('span');l.className='hlabel';l.textContent=h.label;w.appendChild(l);
+  startHfx(h)}
+function stopHfx(){if(hfxRaf)cancelAnimationFrame(hfxRaf);hfxRaf=null;const c=$('hfx');c.getContext('2d').clearRect(0,0,c.width,c.height)}
+function startHfx(h){stopHfx();if(matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const c=$('hfx'),ctx=c.getContext('2d'),dpr=Math.min(2,devicePixelRatio||1);
+  const size=()=>{c.width=innerWidth*dpr;c.height=innerHeight*dpr};size();addEventListener('resize',size);
+  const cols={snow:['#ffffff'],spark:['#ffd76a','#fff3c4','#ffffff'],hearts:['#e0457b','#ff8fb1','#ffffff'],confetti:['#e63946','#2a9d8f','#f4d35e','#457b9d','#ff7aa8'],
+    petals:['#ffc2d4','#ffe08a','#ffffff','#c7e8b0'],leaves:['#ff7518','#c2410c','#f59e0b','#7c3aed']}[h.fx];
+  const N=h.fx==='spark'?45:34;
+  const mk=(top)=>({x:Math.random()*c.width,y:top?-20*dpr:Math.random()*c.height,r:(h.fx==='snow'?1.5+Math.random()*2.5:3+Math.random()*4)*dpr,
+    vy:(h.fx==='spark'?.15:.35+Math.random()*.6)*dpr,vx:(Math.random()-.5)*.4*dpr,a:Math.random()*6.28,va:(Math.random()-.5)*.05,
+    c:cols[Math.random()*cols.length|0],t:Math.random()*6.28});
+  const P_=[...Array(N)].map(()=>mk(false));
+  (function tick(){if(document.hidden){hfxRaf=requestAnimationFrame(tick);return}
+    ctx.clearRect(0,0,c.width,c.height);
+    for(const p of P_){p.t+=.03;p.y+=p.vy;p.x+=p.vx+Math.sin(p.t)*.3*dpr;p.a+=p.va;
+      if(p.y>c.height+20*dpr)Object.assign(p,mk(true));
+      ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.a);ctx.fillStyle=p.c;
+      if(h.fx==='snow'){ctx.globalAlpha=.85;ctx.beginPath();ctx.arc(0,0,p.r,0,6.28);ctx.fill()}
+      else if(h.fx==='spark'){ctx.globalAlpha=.4+.6*Math.abs(Math.sin(p.t*2));ctx.beginPath();for(let i=0;i<8;i++){const rr=i%2?p.r*.35:p.r*1.3,an=i*Math.PI/4;ctx.lineTo(Math.cos(an)*rr,Math.sin(an)*rr)}ctx.fill()}
+      else if(h.fx==='hearts'){ctx.globalAlpha=.8;const s=p.r*.9;ctx.beginPath();ctx.moveTo(0,s*.6);ctx.bezierCurveTo(-s*1.6,-s*.4,-s*.5,-s*1.5,0,-s*.5);ctx.bezierCurveTo(s*.5,-s*1.5,s*1.6,-s*.4,0,s*.6);ctx.fill()}
+      else if(h.fx==='confetti'){ctx.globalAlpha=.9;ctx.fillRect(-p.r,-p.r/2.5,p.r*2,p.r/1.25)}
+      else{ctx.globalAlpha=.8;ctx.beginPath();ctx.ellipse(0,0,p.r*1.2,p.r*.55,0,0,6.28);ctx.fill()}
+      ctx.restore()}
+    hfxRaf=requestAnimationFrame(tick)})()}
+
 // ---------- Galerie ----------
 const LOCK='<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
 const PLAY='<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',STOP='<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>';
@@ -693,6 +758,9 @@ function drawGal(){const R=loadR(),n=slotsOf(R),full=n>=MAXF,vis=photos.slice(0,
   <section class="card"><h3>Musik</h3><div class="tracks">${tracksHtml}</div>
     ${unlockedTracks().length?`<div class="range"><span>leise</span><input type="range" id="vol" min="0" max="1" step=".05" value="${P.vol}"><span>laut</span></div>`:''}</section>
   <section class="card"><h3>Spielfeld</h3><div class="range" style="margin-top:0"><span>durchsichtig</span><input type="range" id="glass" min="20" max="95" step="5" value="${P.glass||55}"><span>deckend</span></div></section>
+  <section class="card"><h3>Feiertagsrahmen</h3><div class="setrow"><span>${(()=>{const t=holidayFor(new Date());return (P.hol||'auto')==='auto'?(t?'Heute: '+HOL[t].n:'Heute ist kein Feiertag'):(P.hol==='off'?'Ausgeschaltet':'Vorschau aktiv')})()}</span>
+    <select class="holsel" id="holSel" aria-label="Feiertagsrahmen"><option value="auto"${(P.hol||'auto')==='auto'?' selected':''}>Automatisch</option><option value="off"${P.hol==='off'?' selected':''}>Aus</option>${Object.keys(HOL).map(k=>`<option value="${k}"${P.hol===k?' selected':''}>Vorschau: ${HOL[k].n}</option>`).join('')}</select></div>
+    <p class="hintp" style="margin-top:10px">Automatisch erscheinen Weihnachten, Silvester, Valentinstag, Karneval, Ostern, Muttertag und Halloween an ihren Tagen von selbst.</p></section>
   <p class="hintp">Deine Fotos bleiben nur auf diesem Gerät gespeichert und werden nirgends hochgeladen.</p>`}
 $('galIn').addEventListener('click',async e=>{const t=e.target.closest('button');if(!t)return;
   if(t.id==='galClose')return closeGal();
@@ -706,7 +774,8 @@ $('galIn').addEventListener('click',async e=>{const t=e.target.closest('button')
     URL.revokeObjectURL(p.url);photos.splice(photos.indexOf(p),1);selId=null;return updateBadge()}
   if(t.dataset.int){P.interval=+t.dataset.int;saveP();renderBg();return drawGal()}
   if(t.dataset.track){const id=t.dataset.track;if(cur&&cur.id===id){stopTrack();P.track=null}else{playTrack(id);P.track=id}saveP();return drawGal()}});
-$('galIn').addEventListener('change',e=>{if(e.target.id==='slideOn'){P.show=e.target.checked;saveP();renderBg();drawGal()}});
+$('galIn').addEventListener('change',e=>{if(e.target.id==='slideOn'){P.show=e.target.checked;saveP();renderBg();drawGal()}
+  if(e.target.id==='holSel'){P.hol=e.target.value;saveP();applyHol();drawGal()}});
 $('galIn').addEventListener('input',e=>{if(e.target.id==='glass')setGlass(e.target.value);
   if(e.target.id==='vol'){P.vol=+e.target.value;saveP();if(master)master.gain.value=P.vol*P.vol}});
 $('photos').onclick=openGal;$('rankBtn').onclick=openGal;
@@ -723,7 +792,7 @@ document.addEventListener('keydown',e=>{
   else if(k.startsWith('Arrow')){e.preventDefault();let i=S.sel<0?40:S.sel,r=i/9|0,c=i%9;
     if(k==='ArrowUp')r=(r+8)%9;if(k==='ArrowDown')r=(r+1)%9;if(k==='ArrowLeft')c=(c+8)%9;if(k==='ArrowRight')c=(c+1)%9;select(r*9+c)}});
 
-renderRank();
+renderRank();applyHol();setInterval(()=>{if((P.hol||'auto')==='auto')applyHol()},36e5);
 const saved=load();
 if(saved&&saved.sol&&saved.val){S=saved;start();if(S.over)endScreen()}
 else{newGame('mittel');S.sel=40;render()}
